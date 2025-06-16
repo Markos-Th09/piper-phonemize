@@ -3,7 +3,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from piper_phonemize_cpp import (
+from .piper_phonemize_cpp import (
     phonemize_espeak as _phonemize_espeak,
     phonemize_codepoints as _phonemize_codepoints,
     phoneme_ids_espeak as _phonemize_ids_espeak,
@@ -14,7 +14,7 @@ from piper_phonemize_cpp import (
     tashkeel_run as _tashkeel_run,
 )
 
-_DIR = Path(__file__).parent
+_DIR = Path(__file__).parent / "share"
 _TASHKEEL_MODEL = _DIR / "libtashkeel_model.ort"
 
 

@@ -1,4 +1,9 @@
 include LICENSE.md
 include README.md
+include CMakeLists.txt
+include src/*.cpp
+include src/*.hpp
+include src/*.h
 recursive-include piper_phonemize/espeak-ng-data *
 include piper_phonemize/libtashkeel_model.ort
+include etc/libtashkeel_model.ort

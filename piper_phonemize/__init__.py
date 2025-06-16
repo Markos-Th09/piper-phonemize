@@ -1,9 +1,9 @@
 from collections import Counter
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
-from piper_phonemize_cpp import (
+from .piper_phonemize_cpp import (
     phonemize_espeak as _phonemize_espeak,
     phonemize_codepoints as _phonemize_codepoints,
     phoneme_ids_espeak as _phonemize_ids_espeak,
@@ -14,7 +14,19 @@ from piper_phonemize_cpp import (
     tashkeel_run as _tashkeel_run,
 )
 
-_DIR = Path(__file__).parent
+__all__ = [
+    "TextCasing",
+    "phonemize_espeak",
+    "phonemize_codepoints",
+    "phoneme_ids_espeak",
+    "phoneme_ids_codepoints",
+    "get_espeak_map",
+    "get_codepoints_map",
+    "get_max_phonemes",
+    "tashkeel_run",
+]
+
+_DIR = Path(__file__).parent / "share"
 _TASHKEEL_MODEL = _DIR / "libtashkeel_model.ort"
 
 

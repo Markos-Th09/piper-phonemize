@@ -14,11 +14,6 @@ if(MSVC)
     # Force compiler to use UTF-8 for IPA constants
     add_compile_options("$<$<C_COMPILER_ID:MSVC>:/utf-8>")
     add_compile_options("$<$<CXX_COMPILER_ID:MSVC>:/utf-8>")
-
-elseif(NOT APPLE)
-    # Linux flags
-    string(APPEND CMAKE_CXX_FLAGS " -Wall -Wextra -Wl,-rpath,'$ORIGIN'")
-    string(APPEND CMAKE_C_FLAGS " -Wall -Wextra")
 endif()
 
 add_library(
@@ -46,7 +41,7 @@ if(NOT DEFINED ONNXRUNTIME_DIR)
         # Windows x86-64
         set(ONNXRUNTIME_PREFIX "onnxruntime-win-x64-${ONNXRUNTIME_VERSION}")
         set(ONNXRUNTIME_EXT "zip")
-    elseif (APPLE)
+    elseif(APPLE)
         if(CMAKE_SYSTEM_PROCESSOR STREQUAL x86_64)
             # MacOS x86-64
             set(ONNXRUNTIME_PREFIX "onnxruntime-osx-x86_64-${ONNXRUNTIME_VERSION}")
@@ -96,7 +91,6 @@ if(NOT DEFINED ONNXRUNTIME_DIR)
 endif()
 
 # ---- espeak-ng ---
-
 if(NOT DEFINED ESPEAK_NG_DIR)
     set(ESPEAK_NG_DIR "${CMAKE_CURRENT_BINARY_DIR}/ei")
 
@@ -116,13 +110,13 @@ if(NOT DEFINED ESPEAK_NG_DIR)
         CMAKE_ARGS -DEXTRA_cmn:BOOL=ON
         CMAKE_ARGS -DEXTRA_ru:BOOL=ON
         CMAKE_ARGS -DCMAKE_C_FLAGS="-D_FILE_OFFSET_BITS=64"
+        CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     add_dependencies(piper_phonemize espeak_ng_external)
 endif()
 
-
 # ---- Declare library ----
-
 target_include_directories(
     piper_phonemize PUBLIC
     "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
@@ -144,92 +138,174 @@ target_link_libraries(
 
 target_compile_features(piper_phonemize PUBLIC cxx_std_17)
 
-# ---- Declare executable ----
+if(SKBUILD)
+    message(STATUS "Building with scikit-build")
 
-add_executable(piper_phonemize_exe src/main.cpp src/phoneme_ids.cpp)
+    set(INSTALL_LIBDIR ${SKBUILD_PROJECT_NAME})
+    set(INSTALL_PREFIX ${SKBUILD_PROJECT_NAME})
 
-if(NOT WIN32)
-    set_property(TARGET piper_phonemize_exe PROPERTY OUTPUT_NAME piper_phonemize)
+    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    execute_process(
+        COMMAND ${Python_EXECUTABLE} -m "pybind11" --cmakedir
+        OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    list(APPEND CMAKE_PREFIX_PATH "${PYBIND11_CMAKE_DIR}")
+    find_package(pybind11 CONFIG REQUIRED)
+
+    pybind11_add_module(piper_phonemize_cpp
+        src/python.cpp
+        src/phonemize.cpp
+        src/phoneme_ids.cpp
+        src/tashkeel.cpp
+    )
+    add_dependencies(piper_phonemize_cpp espeak_ng_external)
+
+    target_include_directories(
+        piper_phonemize_cpp PRIVATE
+        ${ESPEAK_NG_DIR}/include
+        ${ONNXRUNTIME_DIR}/include
+    )
+
+    target_link_directories(
+        piper_phonemize_cpp PRIVATE
+        ${ESPEAK_NG_DIR}/lib
+        ${ONNXRUNTIME_DIR}/lib
+    )
+
+    target_link_libraries(
+        piper_phonemize_cpp PRIVATE
+        espeak-ng
+        onnxruntime
+    )
+
+    target_compile_features(piper_phonemize_cpp PUBLIC cxx_std_17)
+
+    target_compile_definitions(piper_phonemize_cpp PRIVATE
+        VERSION_INFO="${PROJECT_VERSION}"
+    )
+
+    if(APPLE)
+        set_target_properties(piper_phonemize_cpp PROPERTIES
+            INSTALL_RPATH "@loader_path"
+            BUILD_WITH_INSTALL_RPATH ON
+        )
+    elseif(UNIX)
+        set_target_properties(piper_phonemize_cpp PROPERTIES
+            INSTALL_RPATH "\$ORIGIN"
+            BUILD_WITH_INSTALL_RPATH ON
+        )
+    elseif(WIN32)
+        # RPATH not used on Windows; DLLs must be in the same dir as the .pyd
+    endif()
+
+    install(
+        TARGETS piper_phonemize_cpp
+        DESTINATION ${SKBUILD_PROJECT_NAME}
+    )
+
+    # Install dependencies in the same directory
+    install(
+        DIRECTORY ${ESPEAK_NG_DIR}/
+        DESTINATION ${SKBUILD_PROJECT_NAME}
+    )
+    install(
+        DIRECTORY ${ONNXRUNTIME_DIR}/lib/
+        DESTINATION ${SKBUILD_PROJECT_NAME}/
+    )
+else()
+    # ---- Declare executable ----
+    add_executable(piper_phonemize_exe src/main.cpp src/phoneme_ids.cpp)
+
+    if(NOT WIN32)
+        set_property(TARGET piper_phonemize_exe PROPERTY OUTPUT_NAME piper_phonemize)
+    endif()
+
+    target_compile_features(piper_phonemize_exe PUBLIC cxx_std_17)
+
+    target_include_directories(
+        piper_phonemize_exe PUBLIC
+        "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
+        ${ESPEAK_NG_DIR}/include
+    )
+
+    target_link_directories(
+        piper_phonemize_exe PUBLIC
+        ${ESPEAK_NG_DIR}/lib
+    )
+
+    target_link_libraries(piper_phonemize_exe PUBLIC
+        piper_phonemize
+        espeak-ng
+    )
+
+    # ---- Declare test ----
+    include(CTest)
+    enable_testing()
+    add_executable(test_piper_phonemize src/test.cpp src/phoneme_ids.cpp)
+    add_test(
+        NAME test_piper_phonemize
+        COMMAND test_piper_phonemize "${ESPEAK_NG_DIR}/share/espeak-ng-data" "${CMAKE_SOURCE_DIR}/etc/libtashkeel_model.ort"
+    )
+
+    target_compile_features(test_piper_phonemize PUBLIC cxx_std_17)
+
+    target_include_directories(
+        test_piper_phonemize PUBLIC
+        "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
+        ${ESPEAK_NG_DIR}/include
+    )
+
+    target_link_directories(
+        test_piper_phonemize PUBLIC
+        ${ESPEAK_NG_DIR}/lib
+    )
+
+    target_link_libraries(test_piper_phonemize PUBLIC
+        piper_phonemize
+        espeak-ng
+    )
+
+    include(GNUInstallDirs)
+    set(INSTALL_PREFIX ${CMAKE_INSTALL_PREFIX})
+    set(INSTALL_LIBDIR ${CMAKE_INSTALL_LIBDIR})
+    set(INSTALL_INCLUDE ${CMAKE_INSTALL_INCLUDEDIR}/)
+
+    install(
+        TARGETS piper_phonemize
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+    install(
+        DIRECTORY ${CMAKE_SOURCE_DIR}/src/
+        DESTINATION include/piper-phonemize
+        FILES_MATCHING
+        PATTERN "*.h"
+        PATTERN "*.hpp")
+
+    install(
+        TARGETS piper_phonemize_exe
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+    install(
+        DIRECTORY ${ONNXRUNTIME_DIR}/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/)
+
+    install(
+        DIRECTORY ${ESPEAK_NG_DIR}/include/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/espeak-ng
+    )
 endif()
 
-target_compile_features(piper_phonemize_exe PUBLIC cxx_std_17)
-
-target_include_directories(
-    piper_phonemize_exe PUBLIC
-    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
-    ${ESPEAK_NG_DIR}/include
-)
-
-target_link_directories(
-    piper_phonemize_exe PUBLIC
-    ${ESPEAK_NG_DIR}/lib
-)
-
-target_link_libraries(piper_phonemize_exe PUBLIC
-    piper_phonemize
-    espeak-ng
-)
-
-# ---- Declare test ----
-
-include(CTest)
-enable_testing()
-add_executable(test_piper_phonemize src/test.cpp src/phoneme_ids.cpp)
-add_test(
-    NAME test_piper_phonemize
-    COMMAND test_piper_phonemize "${ESPEAK_NG_DIR}/share/espeak-ng-data" "${CMAKE_SOURCE_DIR}/etc/libtashkeel_model.ort"
-)
-
-target_compile_features(test_piper_phonemize PUBLIC cxx_std_17)
-
-target_include_directories(
-    test_piper_phonemize PUBLIC
-    "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>"
-    ${ESPEAK_NG_DIR}/include
-)
-
-target_link_directories(
-    test_piper_phonemize PUBLIC
-    ${ESPEAK_NG_DIR}/lib
-)
-
-target_link_libraries(test_piper_phonemize PUBLIC
-    piper_phonemize
-    espeak-ng
-)
-
-# ---- Declare install targets ----
-
-include(GNUInstallDirs)
-
+# ---- Common install targets ----
 install(
-    TARGETS piper_phonemize
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
-
-install(
-    DIRECTORY ${CMAKE_SOURCE_DIR}/src/
-    DESTINATION include/piper-phonemize
-    FILES_MATCHING
-    PATTERN "*.h"
-    PATTERN "*.hpp")
-
-install(
-    TARGETS piper_phonemize_exe
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-install(
-    FILES ${CMAKE_SOURCE_DIR}/etc/libtashkeel_model.ort
-    TYPE DATA)
-
-# Dependencies
-install(
-    DIRECTORY ${ESPEAK_NG_DIR}/
-    DESTINATION ${CMAKE_INSTALL_PREFIX})
-
-install(
-    DIRECTORY ${ONNXRUNTIME_DIR}/include/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    DIRECTORY ${ESPEAK_NG_DIR}/lib/
+    DESTINATION ${INSTALL_LIBDIR})
 
 install(
     DIRECTORY ${ONNXRUNTIME_DIR}/lib/
-    DESTINATION ${CMAKE_INSTALL_LIBDIR})
+    DESTINATION ${INSTALL_LIBDIR})
+
+install(
+    FILES ${CMAKE_SOURCE_DIR}/etc/libtashkeel_model.ort
+    DESTINATION ${INSTALL_PREFIX}/share
+)

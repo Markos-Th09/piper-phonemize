@@ -110,7 +110,6 @@ if(NOT DEFINED ESPEAK_NG_DIR)
         CMAKE_ARGS -DEXTRA_cmn:BOOL=ON
         CMAKE_ARGS -DEXTRA_ru:BOOL=ON
         CMAKE_ARGS -DCMAKE_C_FLAGS="-D_FILE_OFFSET_BITS=64"
-        CMAKE_ARGS -DCMAKE_TOOLCHAIN_FILE=${CMAKE_TOOLCHAIN_FILE}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     add_dependencies(piper_phonemize espeak_ng_external)
@@ -144,7 +143,7 @@ if(SKBUILD)
     set(INSTALL_LIBDIR ${SKBUILD_PROJECT_NAME})
     set(INSTALL_PREFIX ${SKBUILD_PROJECT_NAME})
 
-    find_package(Python COMPONENTS Interpreter Development REQUIRED)
+    find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
     execute_process(
         COMMAND ${Python_EXECUTABLE} -m "pybind11" --cmakedir
         OUTPUT_VARIABLE PYBIND11_CMAKE_DIR
